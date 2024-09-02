@@ -85,35 +85,6 @@ struct Args {
     contract: String,
 }
 
-// fn prove_address(
-//     signer_address: &H160,
-//     signature: &Signature,
-//     digest: &H256,
-//     threshold_age: &u64,
-//     current_timestamp: &u64,
-//     data: Vec<u8>,
-// ) -> Receipt {
-//     let input: (&H160, &Signature, &H256, &u64, &u64, Vec<u8>) = (
-//         signer_address,
-//         signature,
-//         digest,
-//         threshold_age,
-//         current_timestamp,
-//         data,
-//     );
-
-//     let env = ExecutorEnv::builder()
-//         .write(&input)
-//         .unwrap()
-//         .build()
-//         .unwrap();
-
-//     let proof_info = default_prover()
-//     .prove_with_ctx(env, &VerifierContext::default(), ADDRESS_ELF, &ProverOpts::groth16())?.receipt
-
-
-// }
-
 fn main() -> Result<()> {
     env_logger::init();
     // Parse CLI Arguments: The application starts by parsing command-line arguments provided by the user.
@@ -129,7 +100,7 @@ fn main() -> Result<()> {
 
     // Read and parse the JSON file
     let json_str = fs::read_to_string(
-        "/Users/shivanshgupta/Desktop/address/local-proving/host/src/input.json",
+        "./input.json",
     )?;
     let input_data: InputData = serde_json::from_str(&json_str)?;
 
@@ -181,13 +152,20 @@ fn main() -> Result<()> {
     };
 
 
-    let input: (&H160, &Signature, &H256, &u64, &u64, Vec<u8>) = (
+    let input: (
+        &H160,
+        &Signature,
+        &u64,
+        &u64,
+        Attest,
+        H256,
+    ) = (
         &signer_address,
         &signature,
-        &digest,
         &threshold_age,
         &current_timestamp,
-        message.data,
+        attest,
+        domain_separator,
     );
     let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
 
