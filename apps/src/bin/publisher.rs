@@ -1,14 +1,14 @@
 mod helper;
 mod structs;
 
-use crate::structs::{Attest as StructAttest, InputData}; // Alias for clarity
+use structs::{InputData, Attest}; // Alias for clarity
 use alloy_sol_types::{sol, SolInterface, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
 use ethers::prelude::*;
 use ethers_core::types::Signature;
 use ethers_core::types::{H160, H256};
-use helper::{domain_separator, hash_message, Attest as HelperAttest}; // Alias for clarity
+use helper::domain_separator; // Alias for clarity
 use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
 use risc0_zkvm::guest::env;
@@ -39,11 +39,7 @@ impl TxSender {
         let client = SignerMiddleware::new(provider.clone(), wallet.clone());
         let contract = contract.parse::<Address>()?;
 
-        Ok(TxSender {
-            chain_id,
-            client,
-            contract,
-        })
+        Ok(TxSender {chain_id, client,contract,})
     }
 
     /// Send a transaction with the given calldata.
@@ -91,12 +87,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     // Create a new transaction sender using the parsed arguments.
-    let tx_sender = TxSender::new(
-        args.chain_id,
-        &args.rpc_url,
-        &args.eth_wallet_private_key,
-        &args.contract,
-    )?;
+    let tx_sender = TxSender::new(args.chain_id, &args.rpc_url,&args.eth_wallet_private_key,&args.contract,)?;
 
     // Read and parse the JSON file
     let json_str = fs::read_to_string(
@@ -116,7 +107,7 @@ fn main() -> Result<()> {
     };
 
     let signer_address: H160 = input_data.signer.parse()?;
-    let message: HelperAttest = HelperAttest {
+    let message= Attest {
         // Use the helper's Attest
         version: input_data.sig.message.version,
         schema: input_data.sig.message.schema.parse()?,
@@ -131,18 +122,14 @@ fn main() -> Result<()> {
 
     // Calculate the current timestamp and the threshold age
     // let current_timestamp = chrono::Utc::now().timestamp() as u64;
-    let current_timestamp: u64 = 1725111844 as u64;
+    let current_timestamp = chrono::Utc::now().timestamp() as u64;
     let threshold_age: u64 = 18 * 365 * 24 * 60 * 60; // 18 years in seconds
 
     // Calculate the domain separator and the message hash
-    let domain_separator = domain_separator(
-        &domain,
-        ethers_core::utils::keccak256(
+    let domain_separator = domain_separator( &domain, ethers_core::utils::keccak256(
             b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        )
-        .into(),
-    );
-    let digest: H256 = hash_message(&domain_separator, &message);
+        ) .into());
+    
 
     // Parse the signature
     let signature: Signature = ethers_core::types::Signature {
@@ -152,19 +139,12 @@ fn main() -> Result<()> {
     };
 
 
-    let input: (
-        &H160,
-        &Signature,
-        &u64,
-        &u64,
-        Attest,
-        H256,
-    ) = (
+    let input: ( &H160, &Signature, &u64, &u64, Attest, H256,) = (
         &signer_address,
         &signature,
         &threshold_age,
         &current_timestamp,
-        attest,
+        message,
         domain_separator,
     );
     let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
