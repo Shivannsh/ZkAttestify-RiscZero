@@ -1,34 +1,25 @@
-// Copyright 2024 RISC Zero, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+mod helper;
+mod structs;
 
-// This application demonstrates how to send an off-chain proof request
-// to the Bonsai proving service and publish the received proofs directly
-// to your deployed app contract.
-
-use alloy_primitives::U256;
+use crate::structs::{Attest as StructAttest, InputData}; // Alias for clarity
 use alloy_sol_types::{sol, SolInterface, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
 use ethers::prelude::*;
-use methods::IS_EVEN_ELF;
+use ethers_core::types::Signature;
+use ethers_core::types::{H160, H256};
+use helper::{domain_separator, hash_message, Attest as HelperAttest}; // Alias for clarity
+use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
-use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, VerifierContext};
+use risc0_zkvm::guest::env;
+use std::fs;
 
-// `IEvenNumber` interface automatically generated via the alloy `sol!` macro.
+use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierContext};
+
+// `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
-    interface IEvenNumber {
-        function set(uint256 x, bytes calldata seal);
+    interface IAddress {
+        function verifyAttestation(bytes journal, bytes calldata seal);
     }
 }
 
@@ -92,11 +83,36 @@ struct Args {
     /// Application's contract address on Ethereum
     #[clap(long)]
     contract: String,
-
-    /// The input to provide to the guest binary
-    #[clap(short, long)]
-    input: U256,
 }
+
+// fn prove_address(
+//     signer_address: &H160,
+//     signature: &Signature,
+//     digest: &H256,
+//     threshold_age: &u64,
+//     current_timestamp: &u64,
+//     data: Vec<u8>,
+// ) -> Receipt {
+//     let input: (&H160, &Signature, &H256, &u64, &u64, Vec<u8>) = (
+//         signer_address,
+//         signature,
+//         digest,
+//         threshold_age,
+//         current_timestamp,
+//         data,
+//     );
+
+//     let env = ExecutorEnv::builder()
+//         .write(&input)
+//         .unwrap()
+//         .build()
+//         .unwrap();
+
+//     let proof_info = default_prover()
+//     .prove_with_ctx(env, &VerifierContext::default(), ADDRESS_ELF, &ProverOpts::groth16())?.receipt
+
+
+// }
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -111,38 +127,98 @@ fn main() -> Result<()> {
         &args.contract,
     )?;
 
-    // ABI encode input: Before sending the proof request to the Bonsai proving service,
-    // the input number is ABI-encoded to match the format expected by the guest code running in the zkVM.
-    let input = args.input.abi_encode();
+    // Read and parse the JSON file
+    let json_str = fs::read_to_string(
+        "/Users/shivanshgupta/Desktop/address/local-proving/host/src/input.json",
+    )?;
+    let input_data: InputData = serde_json::from_str(&json_str)?;
 
-    let env = ExecutorEnv::builder().write_slice(&input).build()?;
+    // Extract data from the parsed JSON
+    let domain = ethers_core::types::transaction::eip712::EIP712Domain {
+        name: Some(input_data.sig.domain.name),
+        version: Some(input_data.sig.domain.version),
+        chain_id: Some(ethers_core::types::U256::from_dec_str(
+            &input_data.sig.domain.chain_id,
+        )?),
+        verifying_contract: Some(input_data.sig.domain.verifying_contract.parse()?),
+        salt: None,
+    };
 
-    let receipt = default_prover()
-        .prove_with_ctx(
-            env,
-            &VerifierContext::default(),
-            IS_EVEN_ELF,
-            &ProverOpts::groth16(),
-        )?
+    let signer_address: H160 = input_data.signer.parse()?;
+    let message: HelperAttest = HelperAttest {
+        // Use the helper's Attest
+        version: input_data.sig.message.version,
+        schema: input_data.sig.message.schema.parse()?,
+        recipient: input_data.sig.message.recipient.parse()?,
+        time: input_data.sig.message.time.parse()?,
+        expiration_time: input_data.sig.message.expiration_time.parse()?,
+        revocable: input_data.sig.message.revocable,
+        ref_uid: input_data.sig.message.ref_uid.parse()?,
+        data: ethers_core::utils::hex::decode(&input_data.sig.message.data[2..])?,
+        salt: input_data.sig.message.salt.parse()?,
+    };
+
+    // Calculate the current timestamp and the threshold age
+    // let current_timestamp = chrono::Utc::now().timestamp() as u64;
+    let current_timestamp: u64 = 1725111844 as u64;
+    let threshold_age: u64 = 18 * 365 * 24 * 60 * 60; // 18 years in seconds
+
+    // Calculate the domain separator and the message hash
+    let domain_separator = domain_separator(
+        &domain,
+        ethers_core::utils::keccak256(
+            b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+        )
+        .into(),
+    );
+    let digest: H256 = hash_message(&domain_separator, &message);
+
+    // Parse the signature
+    let signature: Signature = ethers_core::types::Signature {
+        r: input_data.sig.signature.r.parse()?,
+        s: input_data.sig.signature.s.parse()?,
+        v: input_data.sig.signature.v.into(),
+    };
+
+
+    let input: (&H160, &Signature, &H256, &u64, &u64, Vec<u8>) = (
+        &signer_address,
+        &signature,
+        &digest,
+        &threshold_age,
+        &current_timestamp,
+        message.data,
+    );
+    let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
+
+    let receipt: Receipt = default_prover()
+        .prove_with_ctx(env, &VerifierContext::default(), VERIFYATTESTATION_ELF, &ProverOpts::groth16())?
         .receipt;
-
-    // Encode the seal with the selector.
-    let seal = groth16::encode(receipt.inner.groth16()?.seal.clone())?;
+    // let receipt = prove_address(
+    //     &signer_address,
+    //     &signature,
+    //     &digest,
+    //     &threshold_age,
+    //     &current_timestamp,
+    //     message.data, // data attested in schema in bytes
+    // );
+    let seal: Vec<u8> = groth16::encode(receipt.inner.groth16()?.seal.clone())?;
 
     // Extract the journal from the receipt.
-    let journal = receipt.journal.bytes.clone();
+    let journal: Vec<u8> = receipt.journal.bytes.clone(); 
 
     // Decode Journal: Upon receiving the proof, the application decodes the journal to extract
     // the verified number. This ensures that the number being submitted to the blockchain matches
     // the number that was verified off-chain.
-    let x = U256::abi_decode(&journal, true).context("decoding journal data")?;
+    // let (signer_address, threshold_age, current_timestamp): (H160, u64, u64) =
+    //     receipt.journal.decode().unwrap();
 
-    // Construct function call: Using the IEvenNumber interface, the application constructs
+    // Construct function call: Using the IAddress interface, the application constructs
     // the ABI-encoded function call for the set function of the EvenNumber contract.
     // This call includes the verified number, the post-state digest, and the seal (proof).
-    let calldata = IEvenNumber::IEvenNumberCalls::set(IEvenNumber::setCall {
-        x,
-        seal: seal.into(),
+    let calldata = IAddress::IAddressCalls::verifyAttestation(IAddress::verifyAttestationCall {
+        journal,    
+        seal,
     })
     .abi_encode();
 
