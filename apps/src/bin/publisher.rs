@@ -13,7 +13,7 @@ use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
 use risc0_zkvm::guest::env;
 use std::fs;
-use apps::local_prover::LocalProver;
+use localLocalProver;
 
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierContext};
 

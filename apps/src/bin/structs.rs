@@ -4,7 +4,7 @@ use ethers_core::types::{Address, H256,Signature};
 use serde::{Deserialize, Serialize};
 
 // Struct for the message
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq,)] // Added Clone trait
 pub struct Attest {
     pub version: u16,
     pub schema: H256,

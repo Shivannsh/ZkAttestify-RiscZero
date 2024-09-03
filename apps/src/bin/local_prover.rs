@@ -1,3 +1,5 @@
+mod structs; // Add this line to declare the module
+
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use risc0_groth16::docker::stark_to_snark;
@@ -6,7 +8,7 @@ use risc0_zkvm::{
     ProverOpts, VerifierContext,
 };
 
-use apps::bin::structs::Inputs;
+use structs::Inputs;
 
 /// An implementation of a Prover that runs on local machine.
 pub struct LocalProver {}
@@ -50,3 +52,5 @@ impl LocalProver {
         Ok((journal,seal))
     }
 }
+
+fn main(){}
