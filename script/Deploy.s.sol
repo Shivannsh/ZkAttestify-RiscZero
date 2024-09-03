@@ -99,7 +99,7 @@ contract AddressDeploy is Script {
         // console2.log("Deployed EvenNumber to", address(evenNumber));
 
         VerifyAttestation addressContract = new VerifyAttestation(verifier);
-        console2.log("Deployed AddressVerified to", address(addressContract));
+        console2.log("Deployed VerifyAttestation to", address(addressContract));
 
         vm.stopBroadcast();
     }

@@ -42,39 +42,18 @@ contract VerifyAttestation {
         verifier = _verifier;
     }
 
-    /// @notice Set the even number stored on the contract. Requires a RISC Zero proof that the number is even.
-    // function set(uint256 x, bytes calldata seal) public {
-    //     // Construct the expected journal data. Verify will fail if journal does not match.
-    //     bytes memory journal = abi.encode(x);
-    //     verifier.verify(seal, imageId, sha256(journal));
-    //     number = x;
-    // }
-
-    // function set(address _signer_address, uint64 _threshold_age, 
-    //                     uint64 _current_timestamp, bytes calldata seal) public {
-    //     // Construct the expected journal data. Verify will fail if journal does not match.
-    //     bytes memory journal = abi.encode(_signer_address, _threshold_age, 
-    //                                        _current_timestamp);
-    //     verifier.verify(seal, imageId, sha256(journal));
-    //     signer_address = _signer_address;
-    //     threshold_age = _threshold_age;
-    //     current_timestamp = _current_timestamp;
-    // }
 
     function setVerifier(address _verifier,bytes32 _imageId) public  {
         verifier = IRiscZeroVerifier(_verifier);
         imageId = _imageId;
     }
 
-//     /// @notice Returns the number stored.
-//     function get()  external view returns (address) {
-//     return signer_address;
-// }
 
     /// @notice Verify the attestation.
-    function verifyAttestation(bytes memory _journal,bytes calldata seal) external returns (bytes memory) {
+    function verifyAttestation(address signers_address,uint64 threshold_age,uint64 current_timestamp,uint64 attest_time,address receipent,bytes32 domain_seperator ,bytes calldata seal) view public returns (bytes memory) {
         // Construct the expected journal data. Verify will fail if journal does not match.
-        bytes memory journal = _journal; // Updated parameter types
+        bytes memory journal = abi.encode(signers_address,threshold_age,current_timestamp,attest_time,receipent,domain_seperator); // Updated parameter types
+
         verifier.verify(seal, imageId, sha256(journal));
 
         return journal;

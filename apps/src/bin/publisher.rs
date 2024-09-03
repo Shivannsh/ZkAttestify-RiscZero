@@ -1,6 +1,7 @@
 mod helper;
 mod structs;
 
+use alloy_primitives::address;
 use structs::{InputData, Attest}; // Alias for clarity
 use alloy_sol_types::{sol, SolInterface, SolValue};
 use anyhow::{Context, Result};
@@ -19,7 +20,7 @@ use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierConte
 // `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
     interface IAddress {
-        function verifyAttestation(bytes journal, bytes calldata seal);
+        function verifyAttestation(address signers_address,uint64 threshold_age,uint64 current_timestamp,uint64 attest_time,address receipent_address,bytes32 domain_seperator, bytes calldata seal);
     }
 }
 
@@ -91,7 +92,7 @@ fn main() -> Result<()> {
 
     // Read and parse the JSON file
     let json_str = fs::read_to_string(
-        "./input.json",
+        "/Users/shivanshgupta/Desktop/ZkAttestify-onChain/ZkAttestify-RiscZero/apps/src/bin/input.json",
     )?;
     let input_data: InputData = serde_json::from_str(&json_str)?;
 
@@ -139,44 +140,45 @@ fn main() -> Result<()> {
     };
 
 
-    let input: ( &H160, &Signature, &u64, &u64, Attest, H256,) = (
+    let input: ( &H160, &Signature, &u64, &u64, &Attest, H256) = (
         &signer_address,
         &signature,
         &threshold_age,
         &current_timestamp,
-        message,
+        &message,
         domain_separator,
     );
     let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
 
-    let receipt: Receipt = default_prover()
-        .prove_with_ctx(env, &VerifierContext::default(), VERIFYATTESTATION_ELF, &ProverOpts::groth16())?
+    let receipt = default_prover()
+        .prove_with_ctx(
+            env,
+            &VerifierContext::default(),
+            VERIFYATTESTATION_ELF,
+            &ProverOpts::groth16(),
+        )?
         .receipt;
-    // let receipt = prove_address(
-    //     &signer_address,
-    //     &signature,
-    //     &digest,
-    //     &threshold_age,
-    //     &current_timestamp,
-    //     message.data, // data attested in schema in bytes
-    // );
+
     let seal: Vec<u8> = groth16::encode(receipt.inner.groth16()?.seal.clone())?;
 
     // Extract the journal from the receipt.
-    let journal: Vec<u8> = receipt.journal.bytes.clone(); 
+    let journal = receipt.journal.bytes.clone();
 
-    // Decode Journal: Upon receiving the proof, the application decodes the journal to extract
-    // the verified number. This ensures that the number being submitted to the blockchain matches
-    // the number that was verified off-chain.
-    // let (signer_address, threshold_age, current_timestamp): (H160, u64, u64) =
-    //     receipt.journal.decode().unwrap();
+    
+    let signer_address_bytes: [u8; 20] = signer_address.into();
+    let recipient_address_bytes: [u8; 20] = message.recipient.into();
+    let domain_separator_bytes: [u8; 32] = domain_separator.into();
 
-    // Construct function call: Using the IAddress interface, the application constructs
-    // the ABI-encoded function call for the set function of the EvenNumber contract.
-    // This call includes the verified number, the post-state digest, and the seal (proof).
+    // let attest_time = input_data.sig.message.time.parse::<u64>()?;
+    
     let calldata = IAddress::IAddressCalls::verifyAttestation(IAddress::verifyAttestationCall {
-        journal,    
-        seal,
+        signers_address: signer_address_bytes.into(),
+        threshold_age,
+        current_timestamp,
+        attest_time : message.time, 
+        receipent_address: recipient_address_bytes.into(),
+        domain_seperator: domain_separator_bytes.into(),
+        seal: seal.into(),
     })
     .abi_encode();
 

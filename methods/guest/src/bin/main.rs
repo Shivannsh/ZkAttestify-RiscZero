@@ -95,7 +95,7 @@ fn main() {
                 threshold_age,
                 current_timestamp,
                 attest.time,
-                attest.recipient, // address of the recipient
+                attest.recipient, 
                 domain_separator,
             ));
         }
