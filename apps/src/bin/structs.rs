@@ -1,5 +1,6 @@
+use ethers::types::H160;
 // src/structs.rs
-use ethers_core::types::{Address, H256};
+use ethers_core::types::{Address, H256,Signature};
 use serde::{Deserialize, Serialize};
 
 // Struct for the message
@@ -66,5 +67,16 @@ pub struct MessageData {
     pub data: String,
     pub salt: String,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Inputs {
+    pub signer_address : H160,
+    pub signature : Signature,
+    pub threshold_age : u64,
+    pub current_timestamp: u64,
+    pub message: Attest,
+    pub domain_seperator: H256
+}
+
 
 fn main(){}

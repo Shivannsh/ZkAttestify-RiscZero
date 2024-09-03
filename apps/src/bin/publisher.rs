@@ -1,7 +1,7 @@
 mod helper;
 mod structs;
 
-use structs::{InputData, Attest}; // Alias for clarity
+use structs::{InputData, Attest,Inputs}; // Alias for clarity
 use alloy_sol_types::{sol, SolInterface, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -13,6 +13,7 @@ use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
 use risc0_zkvm::guest::env;
 use std::fs;
+use apps::local_prover::LocalProver;
 
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierContext};
 
@@ -130,7 +131,7 @@ fn main() -> Result<()> {
             b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
         ) .into());
     
-
+    
     // Parse the signature
     let signature: Signature = ethers_core::types::Signature {
         r: input_data.sig.signature.r.parse()?,
@@ -139,31 +140,18 @@ fn main() -> Result<()> {
     };
 
 
-    let input: ( &H160, &Signature, &u64, &u64, Attest, H256,) = (
-        &signer_address,
-        &signature,
-        &threshold_age,
-        &current_timestamp,
+    let inputs = Inputs {
+        signer_address,
+        signature,
+        threshold_age,
+        current_timestamp,
         message,
-        domain_separator,
-    );
-    let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
+        domain_seperator,
+    };
+    
+    let (journal, seal) =
+    LocalProver::prove(VERIFYATTESTATION_ELF, &inputs)?;
 
-    let receipt: Receipt = default_prover()
-        .prove_with_ctx(env, &VerifierContext::default(), VERIFYATTESTATION_ELF, &ProverOpts::groth16())?
-        .receipt;
-    // let receipt = prove_address(
-    //     &signer_address,
-    //     &signature,
-    //     &digest,
-    //     &threshold_age,
-    //     &current_timestamp,
-    //     message.data, // data attested in schema in bytes
-    // );
-    let seal: Vec<u8> = groth16::encode(receipt.inner.groth16()?.seal.clone())?;
-
-    // Extract the journal from the receipt.
-    let journal: Vec<u8> = receipt.journal.bytes.clone(); 
 
     // Decode Journal: Upon receiving the proof, the application decodes the journal to extract
     // the verified number. This ensures that the number being submitted to the blockchain matches
