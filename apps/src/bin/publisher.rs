@@ -2,7 +2,6 @@ mod helper;
 mod structs;
 
 use alloy_primitives::address;
-use structs::{InputData, Attest}; // Alias for clarity
 use alloy_sol_types::{sol, SolInterface, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -14,13 +13,21 @@ use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
 use risc0_zkvm::guest::env;
 use std::fs;
+use structs::{Attest, InputData}; // Alias for clarity
 
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierContext};
 
 // `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
     interface IAddress {
-        function verifyAttestation(address signers_address,uint64 threshold_age,uint64 current_timestamp,uint64 attest_time,address receipent_address,bytes32 domain_seperator, bytes calldata seal);
+        function verifyAttestation(
+            address signers_address,
+            uint64 threshold_age,
+            uint64 current_timestamp,
+            uint64 attest_time,
+            address receipent_address,
+            bytes32 domain_seperator, 
+            bytes calldata seal);
     }
 }
 
@@ -40,7 +47,11 @@ impl TxSender {
         let client = SignerMiddleware::new(provider.clone(), wallet.clone());
         let contract = contract.parse::<Address>()?;
 
-        Ok(TxSender {chain_id, client,contract,})
+        Ok(TxSender {
+            chain_id,
+            client,
+            contract,
+        })
     }
 
     /// Send a transaction with the given calldata.
@@ -88,7 +99,12 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     // Create a new transaction sender using the parsed arguments.
-    let tx_sender = TxSender::new(args.chain_id, &args.rpc_url,&args.eth_wallet_private_key,&args.contract,)?;
+    let tx_sender = TxSender::new(
+        args.chain_id,
+        &args.rpc_url,
+        &args.eth_wallet_private_key,
+        &args.contract,
+    )?;
 
     // Read and parse the JSON file
     let json_str = fs::read_to_string(
@@ -108,7 +124,7 @@ fn main() -> Result<()> {
     };
 
     let signer_address: H160 = input_data.signer.parse()?;
-    let message= Attest {
+    let message = Attest {
         // Use the helper's Attest
         version: input_data.sig.message.version,
         schema: input_data.sig.message.schema.parse()?,
@@ -127,10 +143,13 @@ fn main() -> Result<()> {
     let threshold_age: u64 = 18 * 365 * 24 * 60 * 60; // 18 years in seconds
 
     // Calculate the domain separator and the message hash
-    let domain_separator = domain_separator( &domain, ethers_core::utils::keccak256(
+    let domain_separator = domain_separator(
+        &domain,
+        ethers_core::utils::keccak256(
             b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        ) .into());
-    
+        )
+        .into(),
+    );
 
     // Parse the signature
     let signature: Signature = ethers_core::types::Signature {
@@ -139,8 +158,7 @@ fn main() -> Result<()> {
         v: input_data.sig.signature.v.into(),
     };
 
-
-    let input: ( &H160, &Signature, &u64, &u64, &Attest, H256) = (
+    let input: (&H160, &Signature, &u64, &u64, &Attest, H256) = (
         &signer_address,
         &signature,
         &threshold_age,
@@ -148,7 +166,11 @@ fn main() -> Result<()> {
         &message,
         domain_separator,
     );
-    let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
+    let env: ExecutorEnv<'_> = ExecutorEnv::builder()
+        .write(&input)
+        .unwrap()
+        .build()
+        .unwrap();
 
     let receipt = default_prover()
         .prove_with_ctx(
@@ -164,18 +186,17 @@ fn main() -> Result<()> {
     // Extract the journal from the receipt.
     let journal = receipt.journal.bytes.clone();
 
-    
     let signer_address_bytes: [u8; 20] = signer_address.into();
-    let recipient_address_bytes: [u8; 20] = message.recipient.into();
+    let recipient_address_bytes: [u8; 20] = message.recipient.into(); 
     let domain_separator_bytes: [u8; 32] = domain_separator.into();
-
+   
     // let attest_time = input_data.sig.message.time.parse::<u64>()?;
-    
+
     let calldata = IAddress::IAddressCalls::verifyAttestation(IAddress::verifyAttestationCall {
         signers_address: signer_address_bytes.into(),
         threshold_age,
         current_timestamp,
-        attest_time : message.time, 
+        attest_time: message.time,
         receipent_address: recipient_address_bytes.into(),
         domain_seperator: domain_separator_bytes.into(),
         seal: seal.into(),
