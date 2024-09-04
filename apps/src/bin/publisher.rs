@@ -1,21 +1,21 @@
 mod helper;
 mod structs;
-
-use alloy_primitives::address;
-use structs::{InputData, Attest}; // Alias for clarity
-use alloy_sol_types::{sol, SolInterface, SolValue};
-use anyhow::{Context, Result};
+use alloy_sol_types::{sol, SolInterface};
+use anyhow::{Result, Context};
 use clap::Parser;
 use ethers::prelude::*;
 use ethers_core::types::Signature;
 use ethers_core::types::{H160, H256};
-use helper::domain_separator; // Alias for clarity
+use helper::domain_separator;
 use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
-use risc0_zkvm::guest::env;
+use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, VerifierContext};
 use std::fs;
-
-use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierContext};
+use std::path::PathBuf;
+use std::env;
+use crate::structs::Attest;
+use crate::structs::InputData;
+use ethers::utils::hex;
 
 // `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
@@ -90,11 +90,18 @@ fn main() -> Result<()> {
     // Create a new transaction sender using the parsed arguments.
     let tx_sender = TxSender::new(args.chain_id, &args.rpc_url,&args.eth_wallet_private_key,&args.contract,)?;
 
-    // Read and parse the JSON file
-    let json_str = fs::read_to_string(
-        "/Users/shivanshgupta/Desktop/ZkAttestify-onChain/ZkAttestify-RiscZero/apps/src/bin/input.json",
-    )?;
-    let input_data: InputData = serde_json::from_str(&json_str)?;
+  // Print current working directory
+  let current_dir = env::current_dir()?;
+  println!("Current working directory: {:?}", current_dir);
+
+  // Construct the full path to input.json
+  let input_path = current_dir.join("/mnt/c/Users/ASUS/Desktop/ZkAttestify-RiscZero/apps/src/bin/input.json");
+  println!("Attempting to read file at: {:?}", input_path);
+
+  // Read and parse the JSON file
+  let json_str = fs::read_to_string(&input_path)
+      .with_context(|| format!("Failed to read input file: {:?}", input_path))?;
+  let input_data: InputData = serde_json::from_str(&json_str)?;
 
     // Extract data from the parsed JSON
     let domain = ethers_core::types::transaction::eip712::EIP712Domain {
@@ -170,17 +177,29 @@ fn main() -> Result<()> {
     let domain_separator_bytes: [u8; 32] = domain_separator.into();
 
     // let attest_time = input_data.sig.message.time.parse::<u64>()?;
-    
+
+    println!("Signer address: {:?}", signer_address_bytes);
+    println!("Threshold age: {}", threshold_age);
+    println!("Current timestamp: {}", current_timestamp);
+    println!("Attest time: {}", message.time);
+    println!("Recipient address: {:?}", recipient_address_bytes);
+    println!("Domain separator: {:?}", domain_separator_bytes);
+    println!("Seal length: {}", seal.len());
+
     let calldata = IAddress::IAddressCalls::verifyAttestation(IAddress::verifyAttestationCall {
         signers_address: signer_address_bytes.into(),
         threshold_age,
         current_timestamp,
-        attest_time : message.time, 
+        attest_time: message.time,
         receipent_address: recipient_address_bytes.into(),
         domain_seperator: domain_separator_bytes.into(),
         seal: seal.into(),
     })
     .abi_encode();
+
+    println!("Calldata: 0x{}", hex::encode(&calldata));
+    
+
 
     // Initialize the async runtime environment to handle the transaction sending.
     let runtime = tokio::runtime::Runtime::new()?;
