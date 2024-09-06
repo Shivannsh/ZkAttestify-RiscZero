@@ -48,3 +48,85 @@ import {Elf} from "./Elf.sol"; // auto-generated contract after running `cargo b
 //         assertEq(evenNumber.get(), number);
 //     }
 // }
+
+struct Attest {
+    uint16 version;
+    bytes32 schema;
+    address recipient;
+    uint64 time;
+    uint64 expiration_time;
+    bool revocable;
+    bytes32 ref_uid;
+    bytes data;
+    bytes32 salt;
+}
+
+struct Signature {
+    bytes32 r;
+    bytes32 s;
+    uint8 v;
+}
+
+contract VerifyAttestationTest is RiscZeroCheats, Test {
+    VerifyAttestation public verifyAttestation;
+    function setUp() public {
+        IRiscZeroVerifier verifier = deployRiscZeroVerifier();
+        verifyAttestation = new VerifyAttestation(verifier);
+    }
+
+    function test_VerifyAttestation() public {
+        address signer_address = 0x7242Ccc30D68fca5cd8aEfc0ffbb545A1804439F;
+
+        uint64 threshold_age = 18 * 365 * 24 * 60 * 60;
+        uint64 currentTimestamp = 1725111844;
+
+        // Populate the Attest struct using the provided message
+        Attest memory message = Attest({
+            version: 2,
+            schema: 0xe102b6f4e9491f87a8ca24a7bb9ccab0bdbc57cc2d58dacc38295c349f17542e, // schema
+            recipient: address(0x0000000000000000000000000000000000000000), // recipient
+            time: 1724970125, // time
+            expiration_time: 0, // expirationTime
+            revocable: true, // revocable
+            ref_uid: 0x0000000000000000000000000000000000000000000000000000000000000000, // refUID
+            data: hex"000000000000000000000000000000000000000000000000000000003e4be428", // data
+            salt: 0x6d1f5bd7a78a1da090c4178ec4cb9d963d87231b1133398b9b84c7a0d239b2f7 // salt
+        });
+        // Define the signature
+        Signature memory signature = Signature({
+            r: 0x7b4cfc17d9af9a8e56581298b34840e073d4075feafee920c533e03a9a6dae2f,
+            s: 0x2842955b866c043a45b46829b3ab94bd780b05d2f24f2e5f571ebd260e8c7856,
+            v: 28
+        });
+
+        bytes32 domain_seperator = 0xb0d90c6a70c303bb1c0f0c525fce9473dd6de970950af010b0f48ecff37baf73;
+
+        bytes memory input = abi.encode(
+            signer_address,
+            signature,
+            threshold_age,
+            currentTimestamp,
+            message,
+            domain_seperator
+        );
+
+        // console2.log(input);
+
+        (bytes memory journal, bytes memory seal) = prove(
+            Elf.VERIFYATTESTATION_PATH,
+            input
+        );
+
+        bytes memory output = verifyAttestation.verifyAttestation(
+            signer_address,
+            threshold_age,
+            currentTimestamp,
+            message.time,
+            message.recipient,
+            domain_seperator,
+            seal
+        );
+
+        assertEq(output, journal);
+    }
+}

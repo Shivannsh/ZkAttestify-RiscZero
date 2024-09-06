@@ -1,33 +1,26 @@
 mod helper;
 mod structs;
-
-use alloy_primitives::address;
-use alloy_sol_types::{sol, SolInterface, SolValue};
+use crate::structs::Attest;
+use crate::structs::InputData;
+use alloy_sol_types::{sol, SolInterface};
 use anyhow::{Context, Result};
 use clap::Parser;
 use ethers::prelude::*;
+use ethers::utils::hex;
 use ethers_core::types::Signature;
 use ethers_core::types::{H160, H256};
-use helper::domain_separator; // Alias for clarity
+use helper::domain_separator;
 use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
-use risc0_zkvm::guest::env;
+use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, VerifierContext};
+use std::env;
 use std::fs;
-use structs::{Attest, InputData}; // Alias for clarity
-
-use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt, VerifierContext};
+use std::path::PathBuf;
 
 // `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
     interface IAddress {
-        function verifyAttestation(
-            address signers_address,
-            uint64 threshold_age,
-            uint64 current_timestamp,
-            uint64 attest_time,
-            address receipent_address,
-            bytes32 domain_seperator, 
-            bytes calldata seal);
+        function verifyAttestation(address signers_address,uint64 threshold_age,uint64 current_timestamp,uint64 attest_time,address receipent_address,bytes32 domain_seperator, bytes calldata seal);
     }
 }
 
@@ -54,7 +47,7 @@ impl TxSender {
         })
     }
 
-    /// Send a transaction with the given calldata.
+   /// Send a transaction with the given calldata.
     pub async fn send(&self, calldata: Vec<u8>) -> Result<Option<TransactionReceipt>> {
         let tx = TransactionRequest::new()
             .chain_id(self.chain_id)
@@ -64,8 +57,12 @@ impl TxSender {
 
         log::info!("Transaction request: {:?}", &tx);
 
+        println!("Transaction requested --------------------------------------------:");
+
         let tx = self.client.send_transaction(tx, None).await?.await?;
 
+        println!("Transaction sent --------------------------------------------:" );
+        
         log::info!("Transaction receipt: {:?}", &tx);
 
         Ok(tx)
@@ -95,6 +92,7 @@ struct Args {
 
 fn main() -> Result<()> {
     env_logger::init();
+    dotenv::dotenv().ok();
     // Parse CLI Arguments: The application starts by parsing command-line arguments provided by the user.
     let args = Args::parse();
 
@@ -106,10 +104,11 @@ fn main() -> Result<()> {
         &args.contract,
     )?;
 
+    log::info!("TxSender signer address: {:?}", tx_sender.client.address());
+
     // Read and parse the JSON file
     let json_str = fs::read_to_string(
-        "/Users/shivanshgupta/Desktop/ZkAttestify-onChain/ZkAttestify-RiscZero/apps/src/bin/input.json",
-    )?;
+        "/Users/shivanshgupta/Desktop/ZkAttestify-onChain/ZkAttestify-RiscZero/apps/src/bin/input.json",)?;
     let input_data: InputData = serde_json::from_str(&json_str)?;
 
     // Extract data from the parsed JSON
@@ -187,11 +186,20 @@ fn main() -> Result<()> {
     let journal = receipt.journal.bytes.clone();
 
     let signer_address_bytes: [u8; 20] = signer_address.into();
-    let recipient_address_bytes: [u8; 20] = message.recipient.into(); 
+    let recipient_address_bytes: [u8; 20] = message.recipient.into();
     let domain_separator_bytes: [u8; 32] = domain_separator.into();
-   
+
     // let attest_time = input_data.sig.message.time.parse::<u64>()?;
 
+    println!("Signer address: {:?}", signer_address_bytes);
+    println!("Threshold age: {}", threshold_age);
+    println!("Current timestamp: {}", current_timestamp);
+    println!("Attest time: {}", message.time);
+    println!("Recipient address: {:?}", recipient_address_bytes);
+    println!("Domain separator: {:?}", domain_separator_bytes);
+    println!("Seal length: {}", seal.len());
+
+    println!("Sending the data to the contract...");
     let calldata = IAddress::IAddressCalls::verifyAttestation(IAddress::verifyAttestationCall {
         signers_address: signer_address_bytes.into(),
         threshold_age,
@@ -202,6 +210,8 @@ fn main() -> Result<()> {
         seal: seal.into(),
     })
     .abi_encode();
+
+    println!("Contract called");
 
     // Initialize the async runtime environment to handle the transaction sending.
     let runtime = tokio::runtime::Runtime::new()?;
