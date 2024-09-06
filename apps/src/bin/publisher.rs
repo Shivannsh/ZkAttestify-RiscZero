@@ -1,21 +1,21 @@
 mod helper;
 mod structs;
+use crate::structs::Attest;
+use crate::structs::InputData;
 use alloy_sol_types::{sol, SolInterface};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use clap::Parser;
 use ethers::prelude::*;
+use ethers::utils::hex;
 use ethers_core::types::Signature;
 use ethers_core::types::{H160, H256};
 use helper::domain_separator;
 use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, VerifierContext};
+use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::env;
-use crate::structs::Attest;
-use crate::structs::InputData;
-use ethers::utils::hex;
 
 // `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
@@ -40,10 +40,14 @@ impl TxSender {
         let client = SignerMiddleware::new(provider.clone(), wallet.clone());
         let contract = contract.parse::<Address>()?;
 
-        Ok(TxSender {chain_id, client,contract,})
+        Ok(TxSender {
+            chain_id,
+            client,
+            contract,
+        })
     }
 
-    /// Send a transaction with the given calldata.
+   /// Send a transaction with the given calldata.
     pub async fn send(&self, calldata: Vec<u8>) -> Result<Option<TransactionReceipt>> {
         let tx = TransactionRequest::new()
             .chain_id(self.chain_id)
@@ -53,8 +57,12 @@ impl TxSender {
 
         log::info!("Transaction request: {:?}", &tx);
 
+        println!("Transaction requested --------------------------------------------:");
+
         let tx = self.client.send_transaction(tx, None).await?.await?;
 
+        println!("Transaction sent --------------------------------------------:" );
+        
         log::info!("Transaction receipt: {:?}", &tx);
 
         Ok(tx)
@@ -84,24 +92,24 @@ struct Args {
 
 fn main() -> Result<()> {
     env_logger::init();
+    dotenv::dotenv().ok();
     // Parse CLI Arguments: The application starts by parsing command-line arguments provided by the user.
     let args = Args::parse();
 
     // Create a new transaction sender using the parsed arguments.
-    let tx_sender = TxSender::new(args.chain_id, &args.rpc_url,&args.eth_wallet_private_key,&args.contract,)?;
+    let tx_sender = TxSender::new(
+        args.chain_id,
+        &args.rpc_url,
+        &args.eth_wallet_private_key,
+        &args.contract,
+    )?;
 
-  // Print current working directory
-  let current_dir = env::current_dir()?;
-  println!("Current working directory: {:?}", current_dir);
+    log::info!("TxSender signer address: {:?}", tx_sender.client.address());
 
-  // Construct the full path to input.json
-  let input_path = current_dir.join("/mnt/c/Users/ASUS/Desktop/ZkAttestify-RiscZero/apps/src/bin/input.json");
-  println!("Attempting to read file at: {:?}", input_path);
-
-  // Read and parse the JSON file
-  let json_str = fs::read_to_string(&input_path)
-      .with_context(|| format!("Failed to read input file: {:?}", input_path))?;
-  let input_data: InputData = serde_json::from_str(&json_str)?;
+    // Read and parse the JSON file
+    let json_str = fs::read_to_string(
+        "/Users/shivanshgupta/Desktop/ZkAttestify-onChain/ZkAttestify-RiscZero/apps/src/bin/input.json",)?;
+    let input_data: InputData = serde_json::from_str(&json_str)?;
 
     // Extract data from the parsed JSON
     let domain = ethers_core::types::transaction::eip712::EIP712Domain {
@@ -115,7 +123,7 @@ fn main() -> Result<()> {
     };
 
     let signer_address: H160 = input_data.signer.parse()?;
-    let message= Attest {
+    let message = Attest {
         // Use the helper's Attest
         version: input_data.sig.message.version,
         schema: input_data.sig.message.schema.parse()?,
@@ -134,10 +142,13 @@ fn main() -> Result<()> {
     let threshold_age: u64 = 18 * 365 * 24 * 60 * 60; // 18 years in seconds
 
     // Calculate the domain separator and the message hash
-    let domain_separator = domain_separator( &domain, ethers_core::utils::keccak256(
+    let domain_separator = domain_separator(
+        &domain,
+        ethers_core::utils::keccak256(
             b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        ) .into());
-    
+        )
+        .into(),
+    );
 
     // Parse the signature
     let signature: Signature = ethers_core::types::Signature {
@@ -146,8 +157,7 @@ fn main() -> Result<()> {
         v: input_data.sig.signature.v.into(),
     };
 
-
-    let input: ( &H160, &Signature, &u64, &u64, &Attest, H256) = (
+    let input: (&H160, &Signature, &u64, &u64, &Attest, H256) = (
         &signer_address,
         &signature,
         &threshold_age,
@@ -155,7 +165,11 @@ fn main() -> Result<()> {
         &message,
         domain_separator,
     );
-    let env: ExecutorEnv<'_> = ExecutorEnv::builder().write(&input).unwrap().build().unwrap();
+    let env: ExecutorEnv<'_> = ExecutorEnv::builder()
+        .write(&input)
+        .unwrap()
+        .build()
+        .unwrap();
 
     let receipt = default_prover()
         .prove_with_ctx(
@@ -171,7 +185,6 @@ fn main() -> Result<()> {
     // Extract the journal from the receipt.
     let journal = receipt.journal.bytes.clone();
 
-    
     let signer_address_bytes: [u8; 20] = signer_address.into();
     let recipient_address_bytes: [u8; 20] = message.recipient.into();
     let domain_separator_bytes: [u8; 32] = domain_separator.into();
@@ -186,6 +199,7 @@ fn main() -> Result<()> {
     println!("Domain separator: {:?}", domain_separator_bytes);
     println!("Seal length: {}", seal.len());
 
+    println!("Sending the data to the contract...");
     let calldata = IAddress::IAddressCalls::verifyAttestation(IAddress::verifyAttestationCall {
         signers_address: signer_address_bytes.into(),
         threshold_age,
@@ -197,9 +211,7 @@ fn main() -> Result<()> {
     })
     .abi_encode();
 
-    println!("Calldata: 0x{}", hex::encode(&calldata));
-    
-
+    println!("Contract called");
 
     // Initialize the async runtime environment to handle the transaction sending.
     let runtime = tokio::runtime::Runtime::new()?;
