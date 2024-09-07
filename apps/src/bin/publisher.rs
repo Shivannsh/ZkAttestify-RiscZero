@@ -12,10 +12,13 @@ use ethers_core::types::{H160, H256};
 use helper::domain_separator;
 use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
+use risc0_zkvm::compute_image_id;
+
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, VerifierContext};
-use std::env;
+use sha2::{Digest as _, Sha256};
 use std::fs;
-use std::path::PathBuf;
+use std::io::Read;
+
 
 // `IAddress` interface automatically generated via the alloy `sol!` macro.
 sol! {
@@ -62,7 +65,7 @@ impl TxSender {
         let tx = self.client.send_transaction(tx, None).await?.await?;
 
         println!("Transaction sent --------------------------------------------:" );
-        
+
         log::info!("Transaction receipt: {:?}", &tx);
 
         Ok(tx)
@@ -92,9 +95,10 @@ struct Args {
 
 fn main() -> Result<()> {
     env_logger::init();
-    dotenv::dotenv().ok();
     // Parse CLI Arguments: The application starts by parsing command-line arguments provided by the user.
     let args = Args::parse();
+
+    dotenv::dotenv().ok();
 
     // Create a new transaction sender using the parsed arguments.
     let tx_sender = TxSender::new(
@@ -182,8 +186,19 @@ fn main() -> Result<()> {
 
     let seal: Vec<u8> = groth16::encode(receipt.inner.groth16()?.seal.clone())?;
 
+    println!("Seal: {:?}", seal.bytes());
+
     // Extract the journal from the receipt.
     let journal = receipt.journal.bytes.clone();
+    
+    // Calculate SHA256 hash of the journal
+    let journal_hash = Sha256::digest(&journal);
+    
+    println!("Journal SHA256 hash: {:?}", journal_hash);
+
+    let image = compute_image_id(VERIFYATTESTATION_ELF);
+    println!("image:{:?}",image);
+
 
     let signer_address_bytes: [u8; 20] = signer_address.into();
     let recipient_address_bytes: [u8; 20] = message.recipient.into();

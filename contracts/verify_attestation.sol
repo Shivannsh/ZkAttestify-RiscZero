@@ -51,16 +51,14 @@ contract VerifyAttestation {
 
 
     /// @notice Verify the attestation.
-    function verifyAttestation(address signers_address,uint64 threshold_age,uint64 current_timestamp,uint64 attest_time,address receipent,bytes32 domain_seperator ,bytes calldata seal) view public returns (bytes memory) {
+    function verifyAttestation(address signers_address,uint64 threshold_age,uint64 current_timestamp,uint64 attest_time,address receipent,bytes32 domain_seperator ,bytes calldata seal)  public {
 
         console.log("signers_address: %s", signers_address);
-        console.log("Lorem ipsum dolor sit amet, consectetur adipiscing elit dhnfdigfubghs hdskjfhdsgksbfhg hsdfkhgsdhgfhjsdfb sdkhfghkfsdghsfg hdskjgskhgfhshkfg ksdhfsdkgsfkhg sdjkhfjsdfgksf hjkdhjhsfgksfbh hsdjfkhsfkgsfkhgbkhsf khsdkfjhsdfgjgfshksfhksdfhk kbsdkhsfhkjgfjk jkhfdkjsfghjksfghhksjf");
-        // Construct the expected journal data. Verify will fail if journal does not match.
+       // Construct the expected journal data. Verify will fail if journal does not match.
         bytes memory journal = abi.encode(signers_address,threshold_age,current_timestamp,attest_time,receipent,domain_seperator); // Updated parameter types
 
         verifier.verify(seal, imageId, sha256(journal));
 
-        return journal;
     }   
 
 }
