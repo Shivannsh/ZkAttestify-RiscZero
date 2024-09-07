@@ -1,21 +1,23 @@
-use ethers_core::types::Address;
-use ethers_core::types::{RecoveryMessage, Signature, H160, H256};
+// use ethers_core::types::Address;
+use alloy_core::primitives::{Address,keccak256,B256,Signature};
+use ethers_core::types::{RecoveryMessage};
 use risc0_zkvm::guest::env;
-use serde::{Deserialize, Serialize};
-use ethers_core::abi::{decode, ParamType};
-use ethers_core::utils::keccak256;
+use serde::{Deserialize, Serialize};    
+use ethers_core::abi::{ParamType};
+use alloy_core::dyn_abi::abi::decode;
+// use ethers_core::utils::keccak256;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Attest {
     version: u16,
-    schema: H256,
+    schema: B256,
     recipient: Address,
     time: u64,
     expiration_time: u64,
     revocable: bool,
-    ref_uid: H256,
+    ref_uid: B256,
     data: Vec<u8>,
-    salt: H256,
+    salt: B256,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,8 +25,8 @@ struct DateOfBirth {
     unix_timestamp: u128,
 }
 
-fn hash_message(domain_separator: &H256, message: &Attest) -> H256 {
-    let message_typehash: H256 = keccak256(
+fn hash_message(domain_separator: &B256, message: &Attest) -> B256 {
+    let message_typehash: B256 = keccak256(
         b"Attest(uint16 version,bytes32 schema,address recipient,uint64 time,uint64 expirationTime,bool revocable,bytes32 refUID,bytes data,bytes32 salt)"
     ).into();
 
@@ -66,12 +68,12 @@ pub fn decode_date_of_birth(data:&Vec<u8>)-> u64{
 
 fn main() {
     let (signer_address, signature, threshold_age, current_timestamp, attest, domain_separator): (
-        H160,
+        Address,
         Signature,
         u64,
         u64,
         Attest,
-        H256,
+        B256,
     ) = env::read();
 
      // Verify that the data is related to the digest
@@ -90,7 +92,7 @@ fn main() {
         if age_in_seconds < threshold_age {
             panic!("Age is below threshold");
         } else {
-            env::commit::<(H160, u64, u64, u64, H160, H256)>(&(
+            env::commit::<(Address, u64, u64, u64, Address, B256)>(&(
                 signer_address,
                 threshold_age,
                 current_timestamp,

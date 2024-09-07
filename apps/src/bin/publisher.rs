@@ -1,13 +1,13 @@
 mod helper;
 mod structs;
 
-use alloy_primitives::address;
+use alloy_primitives::{Address, B256,Signature};
 use alloy_sol_types::{sol, SolInterface, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
 use ethers::prelude::*;
-use ethers_core::types::Signature;
-use ethers_core::types::{H160, H256};
+// use ethers_core::types::Signature;
+// use ethers_core::types::{Address, B256};
 use helper::domain_separator; // Alias for clarity
 use methods::VERIFYATTESTATION_ELF;
 use risc0_ethereum_contracts::groth16;
@@ -113,7 +113,7 @@ fn main() -> Result<()> {
     let input_data: InputData = serde_json::from_str(&json_str)?;
 
     // Extract data from the parsed JSON
-    let domain = ethers_core::types::transaction::eip712::EIP712Domain {
+    let domain = alloy_sol_types::Eip712Domain {
         name: Some(input_data.sig.domain.name),
         version: Some(input_data.sig.domain.version),
         chain_id: Some(ethers_core::types::U256::from_dec_str(
@@ -123,7 +123,7 @@ fn main() -> Result<()> {
         salt: None,
     };
 
-    let signer_address: H160 = input_data.signer.parse()?;
+    let signer_address: Address = input_data.signer.parse()?;
     let message = Attest {
         // Use the helper's Attest
         version: input_data.sig.message.version,
@@ -133,7 +133,7 @@ fn main() -> Result<()> {
         expiration_time: input_data.sig.message.expiration_time.parse()?,
         revocable: input_data.sig.message.revocable,
         ref_uid: input_data.sig.message.ref_uid.parse()?,
-        data: ethers_core::utils::hex::decode(&input_data.sig.message.data[2..])?,
+        data: alloy_primitives::hex::decode(&input_data.sig.message.data[2..])?,
         salt: input_data.sig.message.salt.parse()?,
     };
 
@@ -145,20 +145,20 @@ fn main() -> Result<()> {
     // Calculate the domain separator and the message hash
     let domain_separator = domain_separator(
         &domain,
-        ethers_core::utils::keccak256(
+        alloy_primitives::keccak256(
             b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
         )
         .into(),
     );
 
     // Parse the signature
-    let signature: Signature = ethers_core::types::Signature {
-        r: input_data.sig.signature.r.parse()?,
-        s: input_data.sig.signature.s.parse()?,
-        v: input_data.sig.signature.v.into(),
-    };
+    let signature = Signature::new(
+        input_data.sig.signature.r.parse()?,
+        input_data.sig.signature.s.parse()?,
+        input_data.sig.signature.v,
+    );
 
-    let input: (&H160, &Signature, &u64, &u64, &Attest, H256) = (
+    let input: (&Address, &Signature, &u64, &u64, &Attest, B256) = (
         &signer_address,
         &signature,
         &threshold_age,

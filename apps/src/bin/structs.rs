@@ -1,19 +1,21 @@
 // src/structs.rs
-use ethers_core::types::{Address, H256};
+// use ethers_core::types::{Address, B256};
 use serde::{Deserialize, Serialize};
+use alloy_primitives::{Address,B256};
+
 
 // Struct for the message
 #[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct Attest {
     pub version: u16,
-    pub schema: H256,
+    pub schema: B256,
     pub recipient: Address,
     pub time: u64,
     pub expiration_time: u64,
     pub revocable: bool,
-    pub ref_uid: H256,
+    pub ref_uid: B256,
     pub data: Vec<u8>,
-    pub salt: H256,
+    pub salt: B256,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
